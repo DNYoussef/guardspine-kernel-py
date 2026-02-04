@@ -1,8 +1,15 @@
-# guardspine-kernel (Python)
+# guardspine-kernel-py
 
-Offline evidence-bundle verification and sealing for GuardSpine.
+Python port of the GuardSpine kernel for evidence-bundle verification and sealing.
 
-This is the **canonical Python implementation** that MUST produce identical results to `@guardspine/kernel` (TypeScript). Use golden vector parity tests to verify cross-language consistency.
+## Language Implementations
+
+| Language | Package | Purpose |
+|----------|---------|---------|
+| **TypeScript** | [@guardspine/kernel](https://github.com/DNYoussef/guardspine-kernel) | Reference implementation - used by OpenClaw plugin |
+| **Python** (this repo) | `guardspine-kernel` | For Python integrations (FastAPI, scripts, ML pipelines) |
+
+This Python library MUST produce **byte-identical hashes** to the TypeScript reference. Use golden vector parity tests to verify cross-language consistency.
 
 ## Installation
 
