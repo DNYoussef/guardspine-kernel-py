@@ -37,6 +37,8 @@ def _safe_equal(left: str, right: str) -> bool:
     """
     Constant-time string comparison to prevent timing side-channel attacks.
     """
+    left = left if isinstance(left, str) else str(left or "")
+    right = right if isinstance(right, str) else str(right or "")
     return hmac.compare_digest(left.encode("utf-8"), right.encode("utf-8"))
 
 
@@ -159,10 +161,10 @@ def verify_hash_chain(
             elif has_v020_fields:
                 expected_v020 = _chain_hash_v020(
                     link.get("sequence", seq),
-                    link.get("item_id", ""),
-                    link.get("content_type", ""),
-                    link.get("content_hash", ""),
-                    link.get("previous_hash", ""),
+                    link.get("item_id") or "",
+                    link.get("content_type") or "",
+                    link.get("content_hash") or "",
+                    link.get("previous_hash") or "",
                 )
                 if _safe_equal(link.get("chain_hash", ""), expected_v020):
                     chain_valid = True

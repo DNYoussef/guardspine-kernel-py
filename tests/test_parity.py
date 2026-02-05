@@ -132,13 +132,14 @@ class TestSealBundle:
         ]
         result = seal_bundle(items)
 
-        assert len(result.items) == 1
-        assert result.items[0].sequence == 0
-        assert result.items[0].item_id == "item-001"
-        assert result.items[0].content_hash.startswith("sha256:")
+        assert len(result["items"]) == 1
+        assert result["items"][0]["sequence"] == 0
+        assert result["items"][0]["item_id"] == "item-001"
+        assert result["items"][0]["content_hash"].startswith("sha256:")
 
-        assert len(result.immutability_proof.hash_chain) == 1
-        assert result.immutability_proof.root_hash.startswith("sha256:")
+        proof = result["immutability_proof"]
+        assert len(proof["hash_chain"]) == 1
+        assert proof["root_hash"].startswith("sha256:")
 
     def test_multi_item_bundle(self):
         """Seal a bundle with multiple items."""
@@ -148,18 +149,18 @@ class TestSealBundle:
         ]
         result = seal_bundle(items)
 
-        assert len(result.items) == 5
-        assert len(result.immutability_proof.hash_chain) == 5
+        assert len(result["items"]) == 5
+        assert len(result["immutability_proof"]["hash_chain"]) == 5
 
         # Check sequence numbers
-        for i, item in enumerate(result.items):
-            assert item.sequence == i
+        for i, item in enumerate(result["items"]):
+            assert item["sequence"] == i
 
         # Check chain linkage
-        chain = result.immutability_proof.hash_chain
-        assert chain[0].previous_hash == "genesis"
+        chain = result["immutability_proof"]["hash_chain"]
+        assert chain[0]["previous_hash"] == "genesis"
         for i in range(1, len(chain)):
-            assert chain[i].previous_hash == chain[i - 1].chain_hash
+            assert chain[i]["previous_hash"] == chain[i - 1]["chain_hash"]
 
 
 class TestVerifyBundle:
@@ -174,18 +175,10 @@ class TestVerifyBundle:
                 "content": {"message": "test"},
             }
         ]
-        seal_result = seal_bundle(items)
-
-        bundle = {
-            "bundle_id": "test-bundle",
-            "version": "0.2.0",
-            "created_at": "2026-01-15T10:30:00.000Z",
-            "items": [item.to_dict() for item in seal_result.items],
-            "immutability_proof": seal_result.immutability_proof.to_dict(),
-        }
+        bundle = seal_bundle(items)
 
         result = verify_bundle(bundle)
-        assert result.valid, f"Errors: {[e.to_dict() for e in result.errors]}"
+        assert result["valid"], f"Errors: {result['errors']}"
 
 
 class TestGoldenVectors:
@@ -195,13 +188,13 @@ class TestGoldenVectors:
         """Verify v0.2.0-minimal-bundle.json passes validation."""
         bundle = load_golden_vector("v0.2.0-minimal-bundle.json")
         result = verify_bundle(bundle)
-        assert result.valid, f"Errors: {[e.to_dict() for e in result.errors]}"
+        assert result["valid"], f"Errors: {result['errors']}"
 
     def test_valid_multi_item_bundle(self):
         """Verify v0.2.0-multi-item-bundle.json passes validation."""
         bundle = load_golden_vector("v0.2.0-multi-item-bundle.json")
         result = verify_bundle(bundle)
-        assert result.valid, f"Errors: {[e.to_dict() for e in result.errors]}"
+        assert result["valid"], f"Errors: {result['errors']}"
 
     def test_valid_signed_bundle(self):
         """Verify v0.2.0-signed-bundle.json passes validation (structure only)."""
@@ -209,8 +202,8 @@ class TestGoldenVectors:
         # Don't require signatures since we don't have the private key
         result = verify_bundle(bundle, require_signatures=False)
         # May have signature errors but structure should be valid
-        structural_errors = [e for e in result.errors if e.code != ErrorCode.SIGNATURE_INVALID]
-        assert len(structural_errors) == 0, f"Structural errors: {[e.to_dict() for e in structural_errors]}"
+        structural_errors = [e for e in result["errors"] if e["code"] != ErrorCode.SIGNATURE_INVALID.value]
+        assert len(structural_errors) == 0, f"Structural errors: {structural_errors}"
 
 
 class TestMalformedBundles:
@@ -220,49 +213,49 @@ class TestMalformedBundles:
         """MUST reject bundle with missing version field."""
         bundle = load_golden_vector("malformed/missing-version.json")
         result = verify_bundle(bundle)
-        assert not result.valid
-        error_codes = [e.code for e in result.errors]
-        assert ErrorCode.MISSING_REQUIRED_FIELD in error_codes
+        assert not result["valid"]
+        error_codes = [e["code"] for e in result["errors"]]
+        assert ErrorCode.MISSING_REQUIRED_FIELD.value in error_codes
 
     def test_wrong_version(self):
         """MUST reject bundle with unsupported version."""
         bundle = load_golden_vector("malformed/wrong-version.json")
         result = verify_bundle(bundle)
-        assert not result.valid
-        error_codes = [e.code for e in result.errors]
-        assert ErrorCode.UNSUPPORTED_VERSION in error_codes
+        assert not result["valid"]
+        error_codes = [e["code"] for e in result["errors"]]
+        assert ErrorCode.UNSUPPORTED_VERSION.value in error_codes
 
     def test_chain_count_mismatch(self):
         """MUST reject bundle where items count != chain length."""
         bundle = load_golden_vector("malformed/chain-count-mismatch.json")
         result = verify_bundle(bundle)
-        assert not result.valid
-        error_codes = [e.code for e in result.errors]
-        assert ErrorCode.LENGTH_MISMATCH in error_codes
+        assert not result["valid"]
+        error_codes = [e["code"] for e in result["errors"]]
+        assert ErrorCode.LENGTH_MISMATCH.value in error_codes
 
     def test_unbound_item(self):
         """MUST reject bundle where item_id not in chain."""
         bundle = load_golden_vector("malformed/unbound-item.json")
         result = verify_bundle(bundle)
-        assert not result.valid
-        error_codes = [e.code for e in result.errors]
-        assert ErrorCode.CONTENT_HASH_MISMATCH in error_codes
+        assert not result["valid"]
+        error_codes = [e["code"] for e in result["errors"]]
+        assert ErrorCode.CONTENT_HASH_MISMATCH.value in error_codes
 
     def test_broken_chain_linkage(self):
         """MUST reject bundle with broken previous_hash linkage."""
         bundle = load_golden_vector("malformed/broken-chain-linkage.json")
         result = verify_bundle(bundle)
-        assert not result.valid
-        error_codes = [e.code for e in result.errors]
-        assert ErrorCode.HASH_CHAIN_BROKEN in error_codes
+        assert not result["valid"]
+        error_codes = [e["code"] for e in result["errors"]]
+        assert ErrorCode.HASH_CHAIN_BROKEN.value in error_codes
 
     def test_sequence_gap(self):
         """MUST reject bundle with sequence gap."""
         bundle = load_golden_vector("malformed/sequence-gap.json")
         result = verify_bundle(bundle)
-        assert not result.valid
-        error_codes = [e.code for e in result.errors]
-        assert ErrorCode.SEQUENCE_GAP in error_codes
+        assert not result["valid"]
+        error_codes = [e["code"] for e in result["errors"]]
+        assert ErrorCode.SEQUENCE_GAP.value in error_codes
 
 
 class TestExpectedHashes:

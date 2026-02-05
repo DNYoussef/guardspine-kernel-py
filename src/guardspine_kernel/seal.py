@@ -217,6 +217,9 @@ def compute_root_hash(chain: list[HashChainLink]) -> str:
 def seal_bundle(
     items: list[dict[str, Any]],
     options: SealOptions | None = None,
+    bundle_id: str | None = None,
+    version: str = "0.2.0",
+    created_at: str | None = None,
 ) -> dict[str, Any]:
     """
     Seal a list of items: compute content hashes, build hash chain,
@@ -225,10 +228,20 @@ def seal_bundle(
     Args:
         items: List of dicts with 'content', 'content_type', and 'item_id' keys
         options: Sealing options (default: v0.2.0 proof version)
+        bundle_id: Optional bundle ID (default: random UUID4)
+        version: Bundle version (default: "0.2.0")
+        created_at: Optional ISO 8601 timestamp (default: current UTC time)
 
     Returns:
-        Dict with immutability_proof and sealed items (JSON-serializable)
+        Dict with bundle_id, version, created_at, immutability_proof, and items
     """
+    import uuid
+    from datetime import datetime, timezone
+
+    if bundle_id is None:
+        bundle_id = str(uuid.uuid4())
+    if created_at is None:
+        created_at = datetime.now(timezone.utc).isoformat()
     chain_inputs = [
         ChainInput(
             content=item.get("content", {}),
@@ -253,6 +266,9 @@ def seal_bundle(
     ]
 
     return {
+        "bundle_id": bundle_id,
+        "version": version,
+        "created_at": created_at,
         "immutability_proof": {
             "hash_chain": [link.to_dict() for link in chain],
             "root_hash": root_hash,
