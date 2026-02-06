@@ -9,7 +9,16 @@ exactly for cross-language consistency.
 
 import hashlib
 import hmac
+import base64
 from typing import Any, Literal
+
+try:
+    from cryptography.exceptions import InvalidSignature
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import ec, ed25519, padding, rsa
+    _HAS_CRYPTOGRAPHY = True
+except ImportError:
+    _HAS_CRYPTOGRAPHY = False
 
 from .canonical import canonical_json
 from .errors import ErrorCode, VerificationError, VerificationResult
@@ -229,9 +238,11 @@ def verify_signatures(
     """
     Verify bundle signatures (if present).
 
-    Note: Full signature verification requires cryptographic libraries.
-    This implementation validates structure and HMAC-SHA256 signatures.
-    Ed25519/RSA/ECDSA verification requires additional dependencies.
+    Supports:
+    - hmac-sha256
+    - ed25519
+    - rsa-sha256
+    - ecdsa-p256
     """
     errors: list[VerificationError] = []
     signatures = bundle.get("signatures", [])
@@ -264,7 +275,6 @@ def verify_signatures(
                 ))
                 continue
 
-            import base64
             expected = base64.b64encode(
                 hmac.new(hmac_secret.encode("utf-8"), content, hashlib.sha256).digest()
             ).decode("utf-8")
@@ -277,13 +287,135 @@ def verify_signatures(
                 ))
             continue
 
-        # For Ed25519/RSA/ECDSA, we'd need cryptography library
-        # For now, we just note that verification is not implemented
         if algo in ("ed25519", "rsa-sha256", "ecdsa-p256"):
-            # TODO: Implement with cryptography library
-            pass
+            if not _HAS_CRYPTOGRAPHY:
+                errors.append(VerificationError(
+                    code=ErrorCode.SIGNATURE_INVALID,
+                    message=f"Algorithm {algo} requires cryptography package",
+                    details={"signature_id": sig.get("signature_id")},
+                ))
+                continue
+
+            key_id = sig.get("public_key_id")
+            if not key_id:
+                errors.append(VerificationError(
+                    code=ErrorCode.SIGNATURE_INVALID,
+                    message="Asymmetric signature missing public_key_id",
+                    details={"signature_id": sig.get("signature_id")},
+                ))
+                continue
+
+            if not public_keys or key_id not in public_keys:
+                errors.append(VerificationError(
+                    code=ErrorCode.SIGNATURE_INVALID,
+                    message=f"Missing public key for key_id={key_id}",
+                    details={"signature_id": sig.get("signature_id"), "public_key_id": key_id},
+                ))
+                continue
+
+            key_value = public_keys[key_id]
+            try:
+                public_key = _load_public_key_for_algo(key_value, algo)
+            except ValueError as exc:
+                errors.append(VerificationError(
+                    code=ErrorCode.SIGNATURE_INVALID,
+                    message=f"Invalid public key for {algo}: {exc}",
+                    details={"signature_id": sig.get("signature_id"), "public_key_id": key_id},
+                ))
+                continue
+
+            try:
+                signature_bytes = base64.b64decode(signature_value, validate=True)
+            except Exception:
+                errors.append(VerificationError(
+                    code=ErrorCode.SIGNATURE_INVALID,
+                    message="Signature is not valid base64",
+                    details={"signature_id": sig.get("signature_id")},
+                ))
+                continue
+
+            try:
+                _verify_asymmetric_signature(algo, public_key, signature_bytes, content)
+            except InvalidSignature:
+                errors.append(VerificationError(
+                    code=ErrorCode.SIGNATURE_INVALID,
+                    message=f"{algo} signature verification failed",
+                    details={"signature_id": sig.get("signature_id"), "public_key_id": key_id},
+                ))
+            except ValueError as exc:
+                errors.append(VerificationError(
+                    code=ErrorCode.SIGNATURE_INVALID,
+                    message=str(exc),
+                    details={"signature_id": sig.get("signature_id"), "public_key_id": key_id},
+                ))
+            continue
+
+        errors.append(VerificationError(
+            code=ErrorCode.SIGNATURE_INVALID,
+            message=f"Unsupported signature algorithm: {algo}",
+            details={"signature_id": sig.get("signature_id")},
+        ))
 
     return VerificationResult(valid=len(errors) == 0, errors=errors)
+
+
+def _load_public_key_for_algo(key_value: str, algorithm: str):
+    """Load a public key from PEM text or base64/DER bytes for a specific algorithm."""
+    if not _HAS_CRYPTOGRAPHY:
+        raise ValueError("cryptography package is not installed")
+
+    key_text = (key_value or "").strip()
+    if not key_text:
+        raise ValueError("empty public key")
+
+    key_obj = None
+    if "BEGIN" in key_text:
+        try:
+            key_obj = serialization.load_pem_public_key(key_text.encode("utf-8"))
+        except Exception as exc:
+            raise ValueError(f"invalid PEM public key ({exc})")
+    else:
+        decoded: bytes
+        try:
+            decoded = base64.b64decode(key_text, validate=True)
+        except Exception:
+            raise ValueError("public key must be PEM or base64")
+
+        # Ed25519 commonly uses raw 32-byte public key encoding.
+        if algorithm == "ed25519" and len(decoded) == 32:
+            try:
+                key_obj = ed25519.Ed25519PublicKey.from_public_bytes(decoded)
+            except Exception as exc:
+                raise ValueError(f"invalid raw Ed25519 key ({exc})")
+        else:
+            try:
+                key_obj = serialization.load_der_public_key(decoded)
+            except Exception as exc:
+                raise ValueError(f"invalid DER public key ({exc})")
+
+    if algorithm == "ed25519" and not isinstance(key_obj, ed25519.Ed25519PublicKey):
+        raise ValueError("expected Ed25519 public key")
+    if algorithm == "rsa-sha256" and not isinstance(key_obj, rsa.RSAPublicKey):
+        raise ValueError("expected RSA public key")
+    if algorithm == "ecdsa-p256" and not isinstance(key_obj, ec.EllipticCurvePublicKey):
+        raise ValueError("expected ECDSA public key")
+    return key_obj
+
+
+def _verify_asymmetric_signature(algorithm: str, public_key, signature: bytes, content: bytes) -> None:
+    if algorithm == "ed25519":
+        public_key.verify(signature, content)
+        return
+    if algorithm == "rsa-sha256":
+        public_key.verify(signature, content, padding.PKCS1v15(), hashes.SHA256())
+        return
+    if algorithm == "ecdsa-p256":
+        curve = getattr(public_key, "curve", None)
+        if curve and not isinstance(curve, ec.SECP256R1):
+            raise ValueError("ecdsa-p256 requires P-256 public key")
+        public_key.verify(signature, content, ec.ECDSA(hashes.SHA256()))
+        return
+    raise ValueError(f"unsupported signature algorithm: {algorithm}")
 
 
 def verify_bundle(
