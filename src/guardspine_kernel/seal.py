@@ -152,6 +152,9 @@ def _chain_hash_legacy(
     return _sha256(chain_input)
 
 
+MAX_CHAIN_ITEMS = 10_000
+
+
 def build_hash_chain(
     items: list[ChainInput],
     options: SealOptions | None = None,
@@ -167,7 +170,14 @@ def build_hash_chain(
 
     Returns:
         List of hash chain links
+
+    Raises:
+        ValueError: If items exceeds MAX_CHAIN_ITEMS (10,000)
     """
+    if len(items) > MAX_CHAIN_ITEMS:
+        raise ValueError(
+            f"build_hash_chain: {len(items)} items exceeds limit of {MAX_CHAIN_ITEMS}"
+        )
     chain: list[HashChainLink] = []
     version = options.proof_version if options else "v0.2.0"
 
@@ -238,18 +248,25 @@ def seal_bundle(
     import uuid
     from datetime import datetime, timezone
 
+    if not items:
+        raise ValueError("seal_bundle: items must be a non-empty array")
+
     if bundle_id is None:
         bundle_id = str(uuid.uuid4())
     if created_at is None:
         created_at = datetime.now(timezone.utc).isoformat()
-    chain_inputs = [
-        ChainInput(
+
+    chain_inputs = []
+    for idx, item in enumerate(items):
+        if not item.get("item_id"):
+            raise ValueError(f"seal_bundle: item {idx} missing item_id")
+        if not item.get("content_type"):
+            raise ValueError(f"seal_bundle: item {idx} missing content_type")
+        chain_inputs.append(ChainInput(
             content=item.get("content", {}),
-            content_type=item.get("content_type", "unknown"),
-            content_id=item.get("item_id", f"item-{idx}"),
-        )
-        for idx, item in enumerate(items)
-    ]
+            content_type=item["content_type"],
+            content_id=item["item_id"],
+        ))
 
     chain = build_hash_chain(chain_inputs, options)
     root_hash = compute_root_hash(chain)
