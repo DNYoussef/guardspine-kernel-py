@@ -25,8 +25,9 @@ from .errors import ErrorCode, VerificationError, VerificationResult
 from .seal import GENESIS_HASH, HashChainLink
 
 
-# Supported bundle versions
-SUPPORTED_VERSIONS = ["0.2.0"]
+# Supported bundle versions.
+# v0.2.1 adds optional sanitization metadata; proof format is unchanged from v0.2.0.
+SUPPORTED_VERSIONS = ["0.2.0", "0.2.1"]
 
 ProofVersion = Literal["v0.2.0", "legacy"]
 

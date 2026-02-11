@@ -47,6 +47,8 @@ class ChainInput:
     content_id: str
 
 
+# ProofVersion covers both v0.2.0 (current) and legacy (pre-v0.2.0 3-field chain hash).
+# v0.2.1 bundles use v0.2.0 proof format; the version bump only adds sanitization metadata.
 ProofVersion = Literal["v0.2.0", "legacy"]
 
 
