@@ -25,6 +25,8 @@ ENV/
 .coverage
 htmlcov/
 *.cover
+test_bundle_e2e.json
+evidence-bundle-tmp/
 
 # OS
 .DS_Store
