@@ -19,10 +19,10 @@ from typing import Any
 
 def canonical_json(value: Any) -> str:
     """
-    Serialize a value to canonical JSON per RFC 8785.
+    Serialize a value to canonical JSON per RFC 8785 (JCS).
 
     Args:
-        value: Any JSON-serializable value
+        value: Any JSON-serializable value (dict, list, str, int, float, bool, None)
 
     Returns:
         Canonical JSON string with sorted keys and no whitespace
