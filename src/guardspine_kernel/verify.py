@@ -38,6 +38,23 @@ def _sha256(data: str) -> str:
     return f"sha256:{hash_bytes}"
 
 
+def verify_bundle_auth_context(bundle: dict) -> bool:
+    """Check that a bundle's auth context fields are internally consistent.
+
+    Returns True if the bundle has valid author/approver metadata,
+    False if required auth fields are missing or contradictory.
+    """
+    context = bundle.get("context", {})
+    author = context.get("author", "")
+    approvers = context.get("approvers", [])
+    if not author:
+        return False
+    # Author cannot approve their own bundle (self-approval guard)
+    if author in approvers:
+        return False
+    return True
+
+
 def _content_hash(content: dict[str, Any]) -> str:
     """Compute content hash of an object."""
     return _sha256(canonical_json(content))
